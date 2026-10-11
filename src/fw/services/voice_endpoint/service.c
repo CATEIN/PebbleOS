@@ -166,6 +166,16 @@ void voice_endpoint_protocol_msg_callback(CommSession *session, const uint8_t *d
       }
       break;
     }
+    case MsgIdPartialResult: {
+      if (size >= sizeof(VoicePartialResultMsg)) {
+        VoicePartialResultMsg *msg = (VoicePartialResultMsg *)data;
+        voice_handle_partial_result(msg->session_id, msg->text,
+                                    size - sizeof(VoicePartialResultMsg));
+      } else {
+        PBL_LOG_WRN("Invalid size for partial result message %zu", size);
+      }
+      break;
+    }
     default:
       // Ignore invalid message ID
       PBL_LOG_WRN("Invalid message ID");

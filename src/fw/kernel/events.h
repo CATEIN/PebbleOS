@@ -502,7 +502,8 @@ typedef enum {
   VoiceEventTypeSessionSetup,
   VoiceEventTypeSessionResult,
   VoiceEventTypeSilenceDetected,
-  VoiceEventTypeSpeechDetected
+  VoiceEventTypeSpeechDetected,
+  VoiceEventTypePartialResult,
 } VoiceEventType;
 
 typedef struct {

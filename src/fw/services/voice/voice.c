@@ -20,6 +20,7 @@
 #include <pbl/logging/logging.h>
 #include "system/passert.h"
 #include "pbl/kernel/compiler.h"
+#include "pbl/util/math.h"
 #include "pbl/util/uuid.h"
 
 #include <string.h>
@@ -27,6 +28,9 @@
 PBL_LOG_MODULE_DEFINE(service_voice, CONFIG_SERVICE_VOICE_LOG_LEVEL);
 
 #define SPEEX_BITSTREAM_VERSION (4)
+
+// The UI only shows the end of the live text
+#define MAX_PARTIAL_RESULT_LEN (256)
 
 #define TIMEOUT_SESSION_SETUP  (8000)
 #define TIMEOUT_SESSION_RESULT (15000)
@@ -701,6 +705,24 @@ void voice_handle_nlp_result(VoiceEndpointResult result, AudioEndpointSessionId 
 
 unlock:
   prv_reset();
+  pbl_mutex_unlock(&s_lock);
+}
+
+void voice_handle_partial_result(AudioEndpointSessionId session_id, const char *text, size_t len) {
+  pbl_mutex_lock(&s_lock, PBL_FOREVER);
+
+  if ((s_state != SessionState_Recording) || (session_id != s_session_id)) {
+    PBL_LOG_DBG("Ignoring partial result for session %" PRIu16, session_id);
+    goto unlock;
+  }
+
+  len = MIN(len, MAX_PARTIAL_RESULT_LEN);
+  PebbleVoiceServiceEventData *event_data =
+      kernel_zalloc_check(sizeof(PebbleVoiceServiceEventData) + len + 1);
+  memcpy(event_data->sentence, text, len);
+  prv_send_event(VoiceEventTypePartialResult, VoiceStatusSuccess, event_data);
+
+unlock:
   pbl_mutex_unlock(&s_lock);
 }
 

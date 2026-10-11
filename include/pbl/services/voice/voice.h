@@ -104,6 +104,10 @@ void voice_handle_dictation_result(VoiceEndpointResult result, AudioEndpointSess
 void voice_handle_nlp_result(VoiceEndpointResult result, AudioEndpointSessionId session_id,
                              char *reminder, time_t timestamp);
 
+//! Handle the text recognized so far in a session that is still recording. The text is copied and
+//! need not be NULL-terminated
+void voice_handle_partial_result(AudioEndpointSessionId session_id, const char *text, size_t len);
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Syscalls
 

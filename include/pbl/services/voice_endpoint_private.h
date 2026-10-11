@@ -14,6 +14,7 @@ typedef enum {
   MsgIdSessionSetup = 0x01,
   MsgIdDictationResult = 0x02,
   MsgIdNLPResult = 0x03,
+  MsgIdPartialResult = 0x04,
 } MsgId;
 
 // Attribute ID definitions
@@ -57,3 +58,11 @@ typedef struct PBL_PACKED {
   VoiceEndpointResult result : 8;
   GenericAttributeList attr_list;
 } VoiceSessionResultMsg;
+
+// Text recognized so far while recording. The UTF-8 text fills the rest of the message.
+typedef struct PBL_PACKED {
+  MsgId msg_id : 8;
+  VEFlags flags;
+  AudioEndpointSessionId session_id;
+  char text[];
+} VoicePartialResultMsg;

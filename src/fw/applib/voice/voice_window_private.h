@@ -46,6 +46,8 @@ typedef struct VoiceUiData {
     int16_t mic_dot_radius;
     TextLayer text_layer;
     char text_buffer[20]; // Larger than needed because i18n
+    char *live_text;      // Text recognized so far, shown while recording
+    PropertyAnimation *live_text_anim;
     StatusBarLayer status_bar;
     LoadingLayer progress_bar;
     PropertyAnimation *progress_anim;
@@ -79,6 +81,7 @@ typedef struct VoiceUiData {
   size_t buffer_size;
   bool show_confirmation_dialog;
   bool show_error_dialog;
+  uint8_t live_text_skip; // Leading words of the live text scrolled off the screen
 
   // Used to keep track of total elapsed time of transcriptions
   uint64_t start_ms;

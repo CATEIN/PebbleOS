@@ -62,6 +62,10 @@
 #define MIN_ELAPSED_DURATION (600)
 
 #define TEXT_PADDING         (4)
+#define TEXT_LAYER_Y_OFFSET  (50)
+#define LIVE_MIC_SCALE       (2)  // The mic shrinks by this factor while live text is shown
+#define LIVE_TEXT_DELAY      (150) // ms the first words wait for the mic to make way
+#define LIVE_TEXT_SETTLE     (8)   // Nudge when the final text replaces the live text
 #define MIC_DOT_MAX_RADIUS   (9)
 #define MIC_DOT_LAYER_RADIUS (MIC_DOT_MAX_RADIUS + 1)
 #define MIC_DOT_LAYER_SIZE   ((GSize){.w = MIC_DOT_LAYER_RADIUS * 2, .h = MIC_DOT_LAYER_RADIUS * 2})
@@ -83,6 +87,8 @@ static PropertyAnimation *prv_create_int16_prop_anim(int16_t from, int16_t to, u
                                                      void *subject);
 static void prv_handle_stop_transition(VoiceUiData *data);
 static void prv_voice_window_push(VoiceUiData *data);
+static void prv_show_live_text(VoiceUiData *data, PebbleVoiceServiceEvent *event);
+static void prv_show_final_live_text(VoiceUiData *data);
 char *sys_voice_get_transcription_from_event(PebbleVoiceServiceEvent *e, char *buffer,
                                              size_t buffer_size, size_t *sentence_len);
 
@@ -381,6 +387,7 @@ static void prv_handle_dictation_result(VoiceUiData *data, PebbleVoiceServiceEve
     case VoiceStatusSuccess: {
       success = prv_handle_dictation_success(data, event);
       if (success) {
+        prv_show_final_live_text(data);
         if (data->state == StateRecording) {
           // Transition to unfold state (StateStopRecording) before pending a transition to the text
           // window
@@ -479,6 +486,10 @@ static void prv_voice_event_handler(PebbleEvent *e, void *context) {
       if (event->type == VoiceEventTypeSpeechDetected) {
         PBL_LOG_DBG("Speech detected");
         data->speech_detected = true;
+      }
+      if (event->type == VoiceEventTypePartialResult) {
+        data->speech_detected = true;
+        prv_show_live_text(data, event);
       }
       if (event->type == VoiceEventTypeSessionResult) {
         // Recording stopped by voice service, capture time recording
@@ -641,13 +652,99 @@ cleanup:
 }
 ///////////// END - CREATE DOT ANIMATIONS
 
+static GFont prv_mic_text_font(void) {
+  return fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+}
+
+static GFont prv_live_text_font(void) {
+  return fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
+}
+
+// Below the microphone icon, where the "Listening" prompt goes
+static GRect prv_mic_text_frame(VoiceUiData *data) {
+  const GRect *root_bounds = &window_get_root_layer(&data->mic_window.window)->bounds;
+  GRect dot_frame = {.size = MIC_DOT_LAYER_SIZE};
+  grect_align(&dot_frame, root_bounds, GAlignCenter, false);
+  return GRect(0, dot_frame.origin.y + TEXT_LAYER_Y_OFFSET, root_bounds->size.w,
+               fonts_get_font_height(prv_mic_text_font()) * 2);
+}
+
+static const int32_t NUM_MOOOK_FRAMES_MID = 3;
+
+static int64_t prv_interpolate_moook_soft(int32_t normalized, int64_t from, int64_t to) {
+  return interpolate_moook_soft(normalized, from, to, NUM_MOOOK_FRAMES_MID);
+}
+
+static bool prv_is_live(VoiceUiData *data) {
+  return data->mic_window.live_text != NULL;
+}
+
+// Where the microphone icon rests: centered, or small above the text while live text is shown
+static GRect prv_mic_icon_frame(VoiceUiData *data, bool live) {
+  KinoReel *reel = kino_layer_get_reel(&data->mic_window.icon_layer);
+  const GSize size = kino_reel_get_size(kino_reel_transform_get_from_reel(reel));
+  const GRect *root_bounds = &window_get_root_layer(&data->mic_window.window)->bounds;
+  if (!live) {
+    GRect frame = {.size = size};
+    grect_align(&frame, root_bounds, GAlignCenter, false);
+    return frame;
+  }
+  GRect frame = {.size = {size.w / LIVE_MIC_SCALE, size.h / LIVE_MIC_SCALE}};
+  grect_align(&frame, root_bounds, GAlignTop, false);
+  frame.origin.y += STATUS_BAR_LAYER_HEIGHT;
+  return frame;
+}
+
+// The dot the microphone folds into
+static GRect prv_mic_dot_frame(VoiceUiData *data) {
+  GRect dot_frame = {.size = MIC_DOT_LAYER_SIZE};
+  if (prv_is_live(data)) {
+    const GRect mic_frame = prv_mic_icon_frame(data, true);
+    grect_align(&dot_frame, &mic_frame, GAlignCenter, false);
+  } else {
+    grect_align(&dot_frame, &window_get_root_layer(&data->mic_window.window)->bounds,
+                GAlignCenter, false);
+  }
+  return dot_frame;
+}
+
+static GRect prv_live_text_frame(VoiceUiData *data) {
+  const GRect *root_bounds = &window_get_root_layer(&data->mic_window.window)->bounds;
+  const GRect mic_frame = prv_mic_icon_frame(data, true);
+  const int16_t top = mic_frame.origin.y + mic_frame.size.h;
+  const int16_t inset = PBL_IF_ROUND_ELSE(20, TEXT_PADDING);
+  return GRect(inset, top, root_bounds->size.w - 2 * inset,
+               root_bounds->size.h - top - 2 * TEXT_PADDING);
+}
+
+static void prv_stop_live_text_anim(VoiceUiData *data) {
+  if (animation_is_scheduled((Animation *)data->mic_window.live_text_anim)) {
+    animation_unschedule((Animation *)data->mic_window.live_text_anim);
+  }
+  data->mic_window.live_text_anim = NULL;
+}
+
+static void prv_free_live_text(VoiceUiData *data) {
+  prv_stop_live_text_anim(data);
+  applib_free(data->mic_window.live_text);
+  data->mic_window.live_text = NULL;
+  data->live_text_skip = 0;
+}
+
 static void prv_hide_mic_text(VoiceUiData *data) {
   text_layer_set_text(&data->mic_window.text_layer, "");
   layer_set_hidden((Layer *)&data->mic_window.text_layer, true);
+  prv_free_live_text(data);
 }
 
 static void prv_show_mic_text(VoiceUiData *data, const char *msg) {
-  layer_set_hidden((Layer *)&data->mic_window.text_layer, false);
+  TextLayer *text_layer = &data->mic_window.text_layer;
+  GRect frame = prv_mic_text_frame(data);
+  layer_set_frame((Layer *)text_layer, &frame);
+  text_layer_set_font(text_layer, prv_mic_text_font());
+  text_layer_set_text_alignment(text_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(text_layer, GTextOverflowModeTrailingEllipsis);
+  layer_set_hidden((Layer *)text_layer, false);
   sys_i18n_get_with_buffer(msg, data->mic_window.text_buffer, sizeof(data->mic_window.text_buffer));
   text_layer_set_text(&data->mic_window.text_layer, data->mic_window.text_buffer);
 }
@@ -672,32 +769,158 @@ static void prv_show_unfold_animation(VoiceUiData *data, bool is_reversed) {
   layer_set_hidden((Layer *)&data->mic_window.icon_layer, false);
   kino_layer_rewind(&data->mic_window.icon_layer);
 
-  GRect from = kino_reel_transform_get_from_frame(reel);
-  GRect to = kino_reel_transform_get_to_frame(reel);
-  kino_reel_scale_segmented_set_from_stroke_width(reel, FIXED_S16_3_ONE, GStrokeWidthOpMultiply);
+  // Fold from wherever the icon rests, but always unfold in the center
+  const bool live = is_reversed && prv_is_live(data);
+  const GRect frame = prv_mic_icon_frame(data, live);
+  kino_reel_transform_set_from_frame(reel, frame);
+  kino_reel_transform_set_to_frame(reel, frame);
+  kino_reel_scale_segmented_set_point_duration(reel, UNFOLD_DEFAULT_POINT_DURATION);
+  kino_reel_scale_segmented_set_from_stroke_width(reel, live ? FIXED_S16_3_HALF : FIXED_S16_3_ONE,
+                                                  GStrokeWidthOpMultiply);
   kino_reel_scale_segmented_set_to_stroke_width(reel, FIXED_S16_3_ONE, GStrokeWidthOpMultiply);
   if (is_reversed) {
-    if (to.size.w > from.size.w) {
-      // swap frames so that we shrink to a dot during reverse
-      kino_reel_transform_set_from_frame(reel, to);
-      kino_reel_transform_set_to_frame(reel, from);
-    }
     kino_reel_scale_segmented_set_end_as_dot(reel, data->mic_window.mic_dot_radius);
     kino_layer_play_section(&data->mic_window.icon_layer, 0, UNFOLD_DURATION);
   } else {
-    if (to.size.w < from.size.w) {
-      // swap frames so that we unfold from a dot
-      kino_reel_transform_set_from_frame(reel, to);
-      kino_reel_transform_set_to_frame(reel, from);
-    }
     kino_reel_unfold_set_start_as_dot(reel, data->mic_window.mic_dot_radius);
     kino_layer_play(&data->mic_window.icon_layer);
   }
 }
 
+// Moves the microphone out of the way of the live text, still visibly listening
+static void prv_shrink_mic(VoiceUiData *data) {
+  KinoReel *reel = kino_layer_get_reel(&data->mic_window.icon_layer);
+  if (!reel) {
+    return;
+  }
+  layer_set_hidden((Layer *)&data->mic_window.icon_layer, false);
+  kino_layer_rewind(&data->mic_window.icon_layer);
+  // Led by its top, the icon stretches up into place, like timeline icons do
+  const GSize size = kino_reel_get_size(kino_reel_transform_get_from_reel(reel));
+  kino_reel_scale_segmented_set_delay_by_distance(reel, GPoint(size.w / 2, 0));
+  kino_reel_scale_segmented_set_point_duration(
+      reel, Fixed_S32_16(5 * FIXED_S32_16_ONE.raw_value / 6));
+  kino_reel_transform_set_from_frame(reel, prv_mic_icon_frame(data, false));
+  kino_reel_transform_set_to_frame(reel, prv_mic_icon_frame(data, true));
+  kino_reel_scale_segmented_set_from_stroke_width(reel, FIXED_S16_3_ONE, GStrokeWidthOpMultiply);
+  kino_reel_scale_segmented_set_to_stroke_width(reel, FIXED_S16_3_HALF, GStrokeWidthOpMultiply);
+  kino_layer_play(&data->mic_window.icon_layer);
+}
+
 static void prv_hide_unfold_animation(VoiceUiData *data) {
   kino_layer_pause(&data->mic_window.icon_layer);
   layer_set_hidden((Layer *)&data->mic_window.icon_layer, true);
+}
+
+static const char *prv_skip_words(const char *text, uint8_t count) {
+  for (; count > 0; count--) {
+    const char *space = strchr(text, ' ');
+    if (!space) {
+      break;
+    }
+    text = space + 1;
+  }
+  return text;
+}
+
+static int16_t prv_live_text_height(const char *text, const GRect *frame) {
+  const GRect box = GRect(0, 0, frame->size.w, 10 * frame->size.h);
+  return graphics_text_layout_get_max_used_size(graphics_context_get_current_context(), text,
+                                                prv_live_text_font(), box,
+                                                GTextOverflowModeWordWrap, GTextAlignmentLeft,
+                                                NULL).h;
+}
+
+// Leading words to skip so the rest fits the frame and the newest words stay visible
+static uint8_t prv_live_text_skip(const char *text, const GRect *frame) {
+  uint8_t skip = 0;
+  const char *tail = text;
+  while (prv_live_text_height(tail, frame) > frame->size.h && skip < UINT8_MAX) {
+    const char *next = prv_skip_words(tail, 1);
+    if (next == tail) {
+      break;
+    }
+    tail = next;
+    skip++;
+  }
+  return skip;
+}
+
+// Slides the text layer from `offset` below where it is up into its resting place
+static void prv_slide_live_text(VoiceUiData *data, int16_t offset, uint32_t delay) {
+  Layer *layer = (Layer *)&data->mic_window.text_layer;
+  GRect to = prv_live_text_frame(data);
+  GRect from = layer->frame;
+  from.origin.y += offset;
+  prv_stop_live_text_anim(data);
+  layer_set_frame(layer, &from);
+
+  PropertyAnimation *anim = property_animation_create_layer_frame(layer, &from, &to);
+  if (!anim) {
+    layer_set_frame(layer, &to);
+    return;
+  }
+  animation_set_custom_interpolation((Animation *)anim, prv_interpolate_moook_soft);
+  animation_set_duration((Animation *)anim, interpolate_moook_soft_duration(NUM_MOOOK_FRAMES_MID));
+  animation_set_delay((Animation *)anim, delay);
+  data->mic_window.live_text_anim = anim;
+  animation_schedule((Animation *)anim);
+}
+
+// Shows `text`, scrolling up as earlier words no longer fit
+static void prv_set_live_text(VoiceUiData *data, const char *text) {
+  const GRect frame = prv_live_text_frame(data);
+  const uint8_t old_skip = data->live_text_skip;
+  const uint8_t skip = prv_live_text_skip(text, &frame);
+  const char *tail = prv_skip_words(text, skip);
+  text_layer_set_text(&data->mic_window.text_layer, tail);
+  data->live_text_skip = skip;
+
+  if (skip > old_skip) {
+    // Start the new tail where its lines were, then scroll them up into place
+    const int16_t scrolled =
+        prv_live_text_height(prv_skip_words(text, old_skip), &frame) -
+        prv_live_text_height(tail, &frame);
+    if (scrolled > 0) {
+      prv_slide_live_text(data, scrolled, 0);
+    }
+  }
+}
+
+static void prv_show_live_text(VoiceUiData *data, PebbleVoiceServiceEvent *event) {
+  size_t len;
+  char *text = sys_voice_get_transcription_from_event(event, NULL, 0, &len);
+  if (!text) {
+    return;
+  }
+
+  const bool first = !prv_is_live(data);
+  applib_free(data->mic_window.live_text);
+  data->mic_window.live_text = text;
+  if (first) {
+    // The microphone makes way at the top and the words rise in below it
+    prv_shrink_mic(data);
+    TextLayer *text_layer = &data->mic_window.text_layer;
+    const GRect frame = prv_live_text_frame(data);
+    layer_set_frame((Layer *)text_layer, &frame);
+    text_layer_set_font(text_layer, prv_live_text_font());
+    text_layer_set_text_alignment(text_layer, GTextAlignmentLeft);
+    text_layer_set_overflow_mode(text_layer, GTextOverflowModeWordWrap);
+    prv_set_live_text(data, text);
+    // Rise in from the bottom of the screen
+    const int16_t screen_h = window_get_root_layer(&data->mic_window.window)->bounds.size.h;
+    prv_slide_live_text(data, screen_h - frame.origin.y, LIVE_TEXT_DELAY);
+  } else {
+    prv_set_live_text(data, text);
+  }
+}
+
+// The live text settles into what the phone finally recognized
+static void prv_show_final_live_text(VoiceUiData *data) {
+  if (prv_is_live(data) && data->message) {
+    prv_set_live_text(data, data->message);
+    prv_slide_live_text(data, LIVE_TEXT_SETTLE, 0);
+  }
 }
 
 static void prv_show_mic_dot_pulse(VoiceUiData *data) {
@@ -706,9 +929,7 @@ static void prv_show_mic_dot_pulse(VoiceUiData *data) {
     animation_unschedule(data->mic_window.mic_dot_anim);
   }
 
-  const GRect *root_frame = &window_get_root_layer(&data->mic_window.window)->frame;
-  GRect dot_frame = data->mic_window.mic_dot_layer.frame;
-  grect_align(&dot_frame, root_frame, GAlignCenter, false);
+  const GRect dot_frame = prv_mic_dot_frame(data);
   layer_set_frame(&data->mic_window.mic_dot_layer, &dot_frame);
   layer_set_hidden(&data->mic_window.mic_dot_layer, false);
 
@@ -742,12 +963,6 @@ static void prv_handle_animation_stop(Animation *animation, bool finished, void 
   prv_handle_stop_transition(context);
 }
 
-static const int32_t NUM_MOOOK_FRAMES_MID = 3;
-
-static int64_t prv_interpolate_moook_soft(int32_t normalized, int64_t from, int64_t to) {
-  return interpolate_moook_soft(normalized, from, to, NUM_MOOOK_FRAMES_MID);
-}
-
 // fly dot in or out of the window
 static void prv_fly_dot(VoiceUiData *data, bool fly_in) {
   Layer *dot_layer = &data->mic_window.mic_dot_layer;
@@ -763,6 +978,7 @@ static void prv_fly_dot(VoiceUiData *data, bool fly_in) {
     from = dot_frame;
     from.origin.x = -to.size.w;
   } else {
+    dot_frame = prv_mic_dot_frame(data);
     from = dot_frame;
     to = dot_frame;
     to.origin.x = -from.size.w;
@@ -1101,9 +1317,11 @@ static void prv_do_transition(VoiceUiData *data, VoiceUiState state) {
       break;
 
     case StateStopRecording:
-      // Fold animation back
+      // Fold animation back. Live text stays up until the final text replaces it.
       prv_disable_select_click(data);
-      prv_hide_mic_text(data);
+      if (!prv_is_live(data)) {
+        prv_hide_mic_text(data);
+      }
       prv_show_unfold_animation(data, true /* is_reverse */);
       break;
 
@@ -1112,6 +1330,10 @@ static void prv_do_transition(VoiceUiData *data, VoiceUiState state) {
       prv_hide_unfold_animation(data);
       prv_show_mic_dot_pulse(data);
       prv_show_progress_bar(data, true /* animated */);
+      if (prv_is_live(data)) {
+        // It would cover the text; its animation still paces the transition to the result
+        layer_set_hidden((Layer *)&data->mic_window.progress_bar, true);
+      }
       break;
 
     case StateStopWaitForResponse:
@@ -1175,16 +1397,11 @@ static void prv_mic_window_load(Window *window) {
   layer_add_child(root_layer, mic_dot_layer);
   layer_set_hidden(mic_dot_layer, true);
 
-  GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
-  int16_t font_height = fonts_get_font_height(font);
-  static const int16_t TEXT_LAYER_Y_OFFSET = 50;
-
   TextLayer *text_layer = &data->mic_window.text_layer;
-  text_layer_init_with_parameters(
-      text_layer,
-      &GRect(0, dot_frame.origin.y + TEXT_LAYER_Y_OFFSET, root_frame->size.w, font_height * 2),
-      NULL, font, GColorBlack, window_bg_color, GTextAlignmentCenter,
-      GTextOverflowModeTrailingEllipsis);
+  const GRect text_frame = prv_mic_text_frame(data);
+  text_layer_init_with_parameters(text_layer, &text_frame, NULL,
+                                  prv_mic_text_font(), GColorBlack, window_bg_color,
+                                  GTextAlignmentCenter, GTextOverflowModeTrailingEllipsis);
   layer_add_child(root_layer, (Layer *)text_layer);
   layer_set_hidden((Layer *)text_layer, true);
 
@@ -1237,7 +1454,9 @@ static void prv_mic_window_load(Window *window) {
     kino_reel_scale_segmented_set_deflate_effect(icon_reel, UNFOLD_EXPAND_AMOUNT);
     kino_reel_scale_segmented_set_bounce_effect(icon_reel, UNFOLD_BOUNCE_AMOUNT);
 
-    kino_layer_init(&data->mic_window.icon_layer, &icon_frame);
+    // Cover the window so the icon can move to the top while live text is shown
+    kino_reel_transform_set_layer_frame(icon_reel, *root_frame);
+    kino_layer_init(&data->mic_window.icon_layer, root_frame);
     // do not clip bounds of window - animated icon will be hidden when it's not within the
     // visible bounds
     kino_layer_set_reel(&data->mic_window.icon_layer, icon_reel, true);
@@ -1269,6 +1488,7 @@ static void prv_mic_window_unload(Window *window) {
   loading_layer_deinit(&data->mic_window.progress_bar);
   layer_deinit(&data->mic_window.mic_dot_layer);
   text_layer_deinit(&data->mic_window.text_layer);
+  prv_free_live_text(data);
   status_bar_layer_deinit(&data->mic_window.status_bar);
   event_service_client_unsubscribe(&data->voice_event_sub);
 }
