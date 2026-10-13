@@ -8,6 +8,7 @@
 
 #include "applib/graphics/gtypes.h"
 #include "applib/ui/app_window_stack.h"
+#include "applib/ui/screen_reader.h"
 #include "applib/ui/content_indicator.h"
 #include "resource/resource_ids.auto.h"
 #include "system/passert.h"
@@ -159,6 +160,9 @@ static void prv_menu_layer_draw_row(GContext *ctx, const Layer *cell_layer, Menu
 
   const GRect *cell_layer_bounds = &cell_layer->bounds;
   const bool is_highlighted = menu_cell_layer_is_highlighted(cell_layer);
+  if (node) {
+    screen_reader_announce_cell(cell_layer, node->name, NULL, NULL);
+  }
 
   // Get global frame for continuous arc effect during scroll animations
   // Include the animation offset for smooth animation during center-focused scroll

@@ -61,6 +61,7 @@
 #include "pbl/services/vibes/vibe_client.h"
 #include "pbl/services/vibes/vibe_score.h"
 #include "pbl/util/testing.h"
+#include "syscall/syscall.h"
 
 #define NOTIFICATION_PRIORITY (ModalPriorityNotification)
 
@@ -1165,6 +1166,31 @@ static void prv_maybe_request_notification_image(LayoutLayer *layout, TimelineIt
 }
 #endif
 
+#ifdef CONFIG_SERVICE_TTS
+//! Read the notification now on screen: app, title, subtitle and body.
+static void prv_announce_notification(const TimelineItem *item) {
+  static const AttributeId s_parts[] = {
+    AttributeIdAppName, AttributeIdTitle, AttributeIdSubtitle, AttributeIdBody,
+  };
+  char text[320];
+  size_t len = 0;
+  text[0] = '\0';
+  for (size_t i = 0; i < ARRAY_LENGTH(s_parts); i++) {
+    const char *part = attribute_get_string(&item->attr_list, s_parts[i], "");
+    if (!part[0]) {
+      continue;
+    }
+    len += snprintf(text + len, sizeof(text) - len, "%s%s", len ? ". " : "", part);
+    if (len >= sizeof(text) - 1) {
+      break;
+    }
+  }
+  if (text[0]) {
+    sys_tts_announce(text);
+  }
+}
+#endif
+
 static void prv_layout_did_appear_handler(SwapLayer *swap_layer, LayoutLayer *layout,
                                           int8_t rel_change, void *context) {
   NotificationWindowData *data = context;
@@ -1180,6 +1206,9 @@ static void prv_layout_did_appear_handler(SwapLayer *swap_layer, LayoutLayer *la
   // update status bar to the current info
   prv_update_status_layer(data);
   kino_layer_play(&((NotificationLayout *)layout)->icon_layer);
+#ifdef CONFIG_SERVICE_TTS
+  prv_announce_notification(n);
+#endif
 }
 
 #if PBL_COLOR

@@ -376,6 +376,7 @@ static bool prv_app_start(const PebbleProcessMd *app_md, const void *args,
     char uuid_str[UUID_STRING_BUFFER_LENGTH];
     uuid_to_string(&app_md->uuid, uuid_str);
     PBL_ANALYTICS_SET_STRING(watchface_uuid, uuid_str);
+    watchface_announce_time();
   }
 #endif
 

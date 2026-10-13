@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "option_menu_window.h"
+#include "screen_reader.h"
 
 #include "applib/applib_malloc.auto.h"
 #include "resource/resource_ids.auto.h"
@@ -314,6 +315,7 @@ void option_menu_destroy(OptionMenu *option_menu) {
 void option_menu_system_draw_row(OptionMenu *option_menu, GContext *ctx, const Layer *cell_layer,
                                  const GRect *cell_frame, const char *title, bool selected,
                                  void *context) {
+  screen_reader_announce_cell(cell_layer, title, NULL, NULL);
   const GTextOverflowMode overflow_mode = GTextOverflowModeTrailingEllipsis;
   // On rectangular, always align to the left. On round, align to the right if we have an icon and
   // otherwise to the center. Icons on the right with text in the center looks very bad and wastes

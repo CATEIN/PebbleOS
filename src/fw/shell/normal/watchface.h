@@ -20,3 +20,6 @@ void watchface_launch_default(const CompositorTransition *animation);
 void watchface_start_low_power(void);
 
 void watchface_reset_click_manager(void);
+
+//! Speak the time and date when text to speech is on.
+void watchface_announce_time(void);

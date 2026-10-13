@@ -103,6 +103,9 @@ uint8_t sys_speaker_get_state(void);
 void sys_speaker_register_finish(void);
 bool sys_speaker_is_muted(void);
 
+// Text to speech: speak the focused item (ignored when TTS is off or the text repeats)
+void sys_tts_announce(const char *text);
+
 void sys_get_app_uuid(Uuid *uuid);
 bool sys_app_is_watchface(void);
 AppInstallId sys_app_manager_get_current_app_id(void);

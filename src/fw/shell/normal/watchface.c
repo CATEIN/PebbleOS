@@ -17,6 +17,13 @@
 #include "applib/app_launch_reason.h"
 #include "applib/ui/click_internal.h"
 #include "pbl/services/notifications/do_not_disturb.h"
+#ifdef CONFIG_SERVICE_TTS
+#include "pbl/services/clock.h"
+#include "pbl/services/tts/tts.h"
+#include <pbl/drivers/rtc.h>
+#include <string.h>
+#include <time.h>
+#endif
 #include <pbl/logging/logging.h>
 #include "system/passert.h"
 
@@ -247,11 +254,26 @@ static void prv_launch_launcher_app(ClickRecognizerRef recognizer, void *data) {
       recognizer);
 }
 
+void watchface_announce_time(void) {
+#ifdef CONFIG_SERVICE_TTS
+  char text[64];
+  clock_copy_time_string(text, sizeof(text));
+  const time_t now = rtc_get_time();
+  struct tm local;
+  localtime_r(&now, &local);
+  const size_t len = strlen(text);
+  strftime(text + len, sizeof(text) - len, ", %A, %B %e", &local);
+  tts_speak(text);
+#endif
+}
+
 static void prv_dismiss_timeline_peek(ClickRecognizerRef recognizer, void *data) {
   if (prv_is_any_combo_active()) {
     return;
   }
   timeline_peek_dismiss();
+  // Back has nothing else to do on the watchface: repeat the time for the screen reader
+  watchface_announce_time();
 }
 
 static void prv_watchface_configure_click_handlers(void) {

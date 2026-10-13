@@ -2,6 +2,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include "menu_layer.h"
+#include "screen_reader.h"
 
 #include "applib/ui/kino/kino_reel.h"
 #include "applib/ui/kino/kino_reel_gbitmap_private.h"
@@ -530,6 +531,7 @@ static PBL_ALWAYS_INLINE void prv_menu_cell_basic_draw_custom_round(
 
 static PBL_ALWAYS_INLINE void prv_draw_cell(GContext *ctx, const Layer *cell_layer,
                                             const MenuCellLayerConfig *config) {
+  screen_reader_announce_cell(cell_layer, config->title, config->value, config->subtitle);
   PBL_IF_RECT_ELSE(prv_menu_cell_basic_draw_custom_rect, prv_menu_cell_basic_draw_custom_round)(
       ctx, cell_layer, config);
 }
@@ -586,6 +588,7 @@ void menu_cell_basic_draw(GContext *ctx, const Layer *cell_layer, const char *ti
 // Title menu cell
 
 void menu_cell_title_draw(GContext *ctx, const Layer *cell_layer, const char *title) {
+  screen_reader_announce_cell(cell_layer, title, NULL, NULL);
   // Title:
   if (title) {
     const bool is_legacy2 = process_manager_compiled_with_legacy2_sdk();
