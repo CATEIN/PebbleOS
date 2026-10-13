@@ -95,6 +95,12 @@ bool speaker_service_stream_open_realtime_owned(SpeakerPriority pri, uint8_t vol
                                                 SpeakerPcmFormat fmt, PebbleTask owner);
 uint32_t speaker_service_stream_write_owned(PebbleTask owner, const void *data, uint32_t num_bytes);
 void speaker_service_stream_close_owned(PebbleTask owner);
+//! @return true while a stream opened with this owner is playing (not preempted or stopped).
+bool speaker_service_stream_is_owned(PebbleTask owner);
+//! Drop the audio queued in this owner's stream and keep the stream playing, so new audio
+//! can replace it without restarting the speaker. Also reopens a stream that was closing.
+//! @return false if the owner has no stream (it ended or was preempted)
+bool speaker_service_stream_flush_owned(PebbleTask owner);
 
 //! Write PCM data to the active stream.
 //! @param data Source buffer

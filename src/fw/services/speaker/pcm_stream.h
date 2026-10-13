@@ -37,6 +37,8 @@ uint32_t pcm_stream_write(PcmStreamState *s, const void *data, uint32_t n);
 //! @return Number of bytes actually read
 uint32_t pcm_stream_read(PcmStreamState *s, void *out, uint32_t max);
 
+//! Drop everything buffered and accept writes again, even after closing.
+void pcm_stream_reset(PcmStreamState *s);
 //! Mark the stream as closing (no more writes). Playback continues until drained.
 void pcm_stream_mark_closing(PcmStreamState *s);
 

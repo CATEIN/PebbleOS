@@ -57,6 +57,13 @@ uint32_t pcm_stream_read(PcmStreamState *s, void *out, uint32_t max) {
   return max;
 }
 
+void pcm_stream_reset(PcmStreamState *s) {
+  s->read_pos = 0;
+  s->write_pos = 0;
+  s->count = 0;
+  s->closing = false;
+}
+
 void pcm_stream_mark_closing(PcmStreamState *s) {
   s->closing = true;
 }

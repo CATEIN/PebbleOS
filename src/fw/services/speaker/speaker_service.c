@@ -790,6 +790,31 @@ void speaker_service_stream_close(void) {
   speaker_service_stream_close_owned(PebbleTask_Unknown);
 }
 
+bool speaker_service_stream_flush_owned(PebbleTask owner) {
+  pbl_mutex_lock(&s_lock, PBL_FOREVER);
+  const bool owned = s_state.state != SpeakerStateIdle &&
+                     s_state.source_type == SpeakerSourceStream && s_state.owner_task == owner;
+  if (owned) {
+    pcm_stream_reset(&s_state.pcm_stream);
+    s_state.state = SpeakerStatePlaying;
+    s_state.stream_realtime = false;
+    s_state.pipeline_draining = false;
+    s_state.drain_samples_remaining = 0;
+    s_state.pcm_tail_samples = 0;
+    memset(s_state.prev_samples, 0, sizeof(s_state.prev_samples));
+  }
+  pbl_mutex_unlock(&s_lock);
+  return owned;
+}
+
+bool speaker_service_stream_is_owned(PebbleTask owner) {
+  pbl_mutex_lock(&s_lock, PBL_FOREVER);
+  const bool owned = s_state.state != SpeakerStateIdle &&
+                     s_state.source_type == SpeakerSourceStream && s_state.owner_task == owner;
+  pbl_mutex_unlock(&s_lock);
+  return owned;
+}
+
 void speaker_service_stream_close_owned(PebbleTask owner) {
   pbl_mutex_lock(&s_lock, PBL_FOREVER);
 
