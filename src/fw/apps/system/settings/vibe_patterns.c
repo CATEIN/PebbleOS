@@ -11,6 +11,9 @@
 #include "pbl/services/notifications/alerts_preferences.h"
 #include "pbl/services/notifications/alerts_preferences_private.h"
 #include "pbl/services/speaker/speaker_service.h"
+#ifdef CONFIG_SERVICE_TTS
+#include "pbl/services/tts/tts.h"
+#endif
 #include "pbl/services/vibes/vibe_client.h"
 #include "pbl/services/vibes/vibe_intensity.h"
 #include "pbl/services/vibes/vibe_score.h"
@@ -26,6 +29,9 @@ typedef enum VibeSettingsRow {
 #ifdef CONFIG_SPEAKER
   VibeSettingsRow_MuteSpeaker = 0,
   VibeSettingsRow_SpeakerVolume,
+#ifdef CONFIG_SERVICE_TTS
+  VibeSettingsRow_TextToSpeech,
+#endif
   VibeSettingsRow_Notifications,
 #else
   VibeSettingsRow_Notifications = 0,
@@ -75,6 +81,14 @@ static void prv_draw_row_cb(SettingsCallbacks *context, GContext *ctx, const Lay
       menu_cell_basic_draw(ctx, cell_layer, i18n_get(title, data), data->volume_subtitle, NULL);
       return;
     }
+#ifdef CONFIG_SERVICE_TTS
+    case VibeSettingsRow_TextToSpeech: {
+      title = i18n_noop("Text to Speech");
+      subtitle = tts_voice_name(tts_get_voice());
+      menu_cell_basic_draw(ctx, cell_layer, i18n_get(title, data), i18n_get(subtitle, data), NULL);
+      return;
+    }
+#endif
 #endif
     case VibeSettingsRow_Notifications: {
       title = i18n_noop("Notifications");
@@ -131,7 +145,11 @@ static void prv_selection_changed_cb(SettingsCallbacks *context, uint16_t new_ro
   switch (new_row) {
 #ifdef CONFIG_SPEAKER
     case VibeSettingsRow_MuteSpeaker:
-    case VibeSettingsRow_SpeakerVolume: {
+    case VibeSettingsRow_SpeakerVolume:
+#ifdef CONFIG_SERVICE_TTS
+    case VibeSettingsRow_TextToSpeech:
+#endif
+    {
       // No vibe preview — this row controls a non-vibe setting.
       return;
     }
@@ -190,6 +208,14 @@ static void prv_select_click_cb(SettingsCallbacks *context, uint16_t row) {
       speaker_volume_window_push();
       return;
     }
+#ifdef CONFIG_SERVICE_TTS
+    case VibeSettingsRow_TextToSpeech: {
+      // Off -> On - Sadie -> On - SAM -> Off; the redrawn row announces the new voice
+      tts_set_voice((TtsVoice)((tts_get_voice() + 1) % TtsVoiceCount));
+      settings_menu_mark_dirty(SettingsMenuItemVibrations);
+      return;
+    }
+#endif
 #endif
     case VibeSettingsRow_Notifications: {
       client = VibeClient_Notifications;

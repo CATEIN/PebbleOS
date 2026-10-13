@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 CATEIN
+# SPDX-License-Identifier: Apache-2.0
+
+config SERVICE_TTS
+    bool "Text to speech"
+    depends on SERVICE_SPEAKER && SPEAKER
+    default y
+    help
+      Speaks the focused menu item with S.A.M. (Sadie '82 or the original
+      1982 voice), so the watch can be used without looking at it.
+
+if SERVICE_TTS
+
+module = SERVICE_TTS
+module-str = Text to speech
+source "subsys/logging/Kconfig.template.log_level"
+
+endif

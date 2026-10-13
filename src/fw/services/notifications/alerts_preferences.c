@@ -50,6 +50,9 @@ static bool s_speaker_muted = false;
 #define PREF_KEY_SPEAKER_VOLUME "speakerVolume"
 static uint8_t s_speaker_volume = 100;
 
+#define PREF_KEY_TTS_VOICE "ttsVoice"
+static uint8_t s_tts_voice = 0;
+
 #define PREF_KEY_VIBE "vibe"
 static bool s_vibe_on_notification = true;
 
@@ -355,6 +358,7 @@ void alerts_preferences_init(void) {
   RESTORE_PREF(PREF_KEY_DND_MUTE_SPEAKER, s_dnd_mute_speaker);
   RESTORE_PREF(PREF_KEY_SPEAKER_MUTED, s_speaker_muted);
   RESTORE_PREF(PREF_KEY_SPEAKER_VOLUME, s_speaker_volume);
+  RESTORE_PREF(PREF_KEY_TTS_VOICE, s_tts_voice);
   RESTORE_PREF(PREF_KEY_LEGACY_DND_SCHEDULE, s_legacy_dnd_schedule);
   RESTORE_PREF(PREF_KEY_LEGACY_DND_SCHEDULE_ENABLED, s_legacy_dnd_schedule_enabled);
   RESTORE_PREF(s_dnd_schedule_keys[WeekdaySchedule].schedule_pref_key,
@@ -505,6 +509,15 @@ void alerts_preferences_set_speaker_volume(uint8_t volume) {
   }
   s_speaker_volume = volume;
   SET_PREF(PREF_KEY_SPEAKER_VOLUME, s_speaker_volume);
+}
+
+uint8_t alerts_preferences_get_tts_voice(void) {
+  return s_tts_voice;
+}
+
+void alerts_preferences_set_tts_voice(uint8_t voice) {
+  s_tts_voice = voice;
+  SET_PREF(PREF_KEY_TTS_VOICE, s_tts_voice);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -772,6 +785,7 @@ void alerts_preferences_handle_blob_db_event(PebbleBlobDBEvent *event) {
   RELOAD_IF_MATCH(PREF_KEY_SPEAKER_MUTED, s_speaker_muted);
   RELOAD_IF_MATCH(PREF_KEY_DND_AUTO_DISMISS, s_dnd_auto_dismiss);
   RELOAD_IF_MATCH(PREF_KEY_SPEAKER_VOLUME, s_speaker_volume);
+  RELOAD_IF_MATCH(PREF_KEY_TTS_VOICE, s_tts_voice);
 
 #undef RELOAD_IF_MATCH
 

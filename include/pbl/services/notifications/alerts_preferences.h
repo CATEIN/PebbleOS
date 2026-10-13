@@ -79,6 +79,12 @@ void alerts_preferences_set_speaker_volume(uint8_t volume);
 //! @return The system-wide speaker volume cap (0-100). Defaults to 100.
 uint8_t alerts_preferences_get_speaker_volume(void);
 
+//! Set the text-to-speech voice (a TtsVoice; 0 = off).
+void alerts_preferences_set_tts_voice(uint8_t voice);
+
+//! @return The text-to-speech voice (a TtsVoice; 0 = off).
+uint8_t alerts_preferences_get_tts_voice(void);
+
 //! Checks whether a given "first use" dialog has been shown and sets it as complete
 //! @param source The "first use" bit to check
 //! @return true if the dialog has already been shown, false otherwise

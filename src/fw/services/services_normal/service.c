@@ -26,6 +26,9 @@
 #include "pbl/services/process_management/app_order_storage.h"
 #include "pbl/services/send_text_service.h"
 #include "pbl/services/speaker/speaker_service.h"
+#ifdef CONFIG_SERVICE_TTS
+#include "pbl/services/tts/tts.h"
+#endif
 #include "pbl/services/stationary.h"
 #include "pbl/services/timeline/event.h"
 #include "pbl/services/wakeup.h"
@@ -119,6 +122,9 @@ void services_normal_init(void) {
   weather_service_init();
 
   speaker_service_init();
+#ifdef CONFIG_SERVICE_TTS
+  tts_init();
+#endif
 
 #ifdef CONFIG_MIC
   voice_init();
